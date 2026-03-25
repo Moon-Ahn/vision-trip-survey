@@ -183,7 +183,7 @@ const App = () => {
               <div className="space-y-4">
                 <label className="font-bold flex items-center gap-2 text-gray-700"><Calendar size={18} className="text-blue-500"/> 선호 기간</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['3박 4일', '4박 5일', '5박 6일', '일주일 이상'].map(d => (
+                  {['3박 4일', '4박 5일', '5박 6일', '일주일 이상', '상관없음'].map(d => (
                     <button 
                       key={d}
                       onClick={() => setFormData({...formData, duration: d})}
