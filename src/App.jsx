@@ -1,386 +1,379 @@
-import React, { useState } from 'react';
-import { 
-  Send, 
-  ChevronRight, 
-  ChevronLeft, 
-  CheckCircle2, 
-  Globe, 
-  Calendar, 
-  Star, 
-  Sprout, 
-  Users, 
-  MessageSquare, 
-  HelpCircle, 
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Star,
+  MapPin,
+  Utensils,
+  Plus,
+  Search,
+  Navigation,
+  MessageSquare,
+  X,
   Loader2,
-  Phone,
-  User
+  Map as MapIcon
 } from 'lucide-react';
 
+const SCRIPT_URL = "YOUR_SCRIPT_URL"; // 여기에 팀장님의 구글 앱스 스크립트 URL을 넣으세요!
+
 const App = () => {
-  const [step, setStep] = useState(0); // 0: 시작, 1: 참여여부, 2: 상세질문/사유, 3: 마무리, 4: 완료
-  const [participate, setParticipate] = useState(null);
+  const [restaurants, setRestaurants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedRes, setSelectedRes] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // 모달 상태
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+
+  // 폼 상태
+  const [newRes, setNewRes] = useState({ name: '', category: '한식', address: '', tags: '' });
+  const [newReview, setNewReview] = useState({ rating: 5, comment: '', author: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    country: '',
-    duration: '',
-    talents: [],
-    spiritualFruit: [],
-    ministryType: '',
-    training: '',
-    reason: '',
-    suggestions: ''
-  });
 
-  // 중요: Google Apps Script 배포 후 받은 웹 앱 URL을 여기에 넣으세요.
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwqp-7Ln7j5AL8HbeSe3lNHzAyHWU1sbO1kwlb-s6x0flnaxIxE6gqhv2rHsge1IdGh/exec";
-
-  const nextStep = () => setStep(prev => prev + 1);
-  const prevStep = () => setStep(prev => prev - 1);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleCheckboxChange = (category, value) => {
-    setFormData(prev => {
-      const current = prev[category];
-      const next = current.includes(value)
-        ? current.filter(item => item !== value)
-        : [...current, value];
-      return { ...prev, [category]: next };
-    });
-  };
-
-  const handleParticipation = (val) => {
-    setParticipate(val);
-    nextStep();
-  };
-
-  const handleSubmit = async () => {
-    setIsSubmitting(true);
+  // 1. 데이터 불러오기 (초기 로딩 시 1회)
+  const fetchRestaurants = async () => {
     try {
-      // CORS 이슈 방지를 위해 'no-cors' 모드를 사용할 수 있으나, 
-      // Apps Script 결과 확인을 위해 기본 fetch를 사용합니다.
-      // 실제 환경에서는 redirect를 따르도록 설정됩니다.
+      const response = await fetch(SCRIPT_URL);
+      const data = await response.json();
+
+      // 구글 시트에서 가져온 데이터를 레스토랑별로 그룹화
+      const grouped = data.reduce((acc, curr) => {
+        if (!acc[curr.restaurant]) {
+          acc[curr.restaurant] = {
+            id: curr.restaurant,
+            name: curr.restaurant,
+            address: curr.address || "주소 정보 없음", // 시트에 주소 열이 추가되어야 함
+            category: curr.category || "맛집",
+            reviews: [],
+            avgRating: 0
+          };
+        }
+        acc[curr.restaurant].reviews.push({
+          rating: Number(curr.rating),
+          comment: curr.comment,
+          author: curr.author,
+          timestamp: curr.timestamp
+        });
+        return acc;
+      }, {});
+
+      // 평균 별점 계산
+      const processedList = Object.values(grouped).map(res => {
+        const total = res.reviews.reduce((sum, r) => sum + r.rating, 0);
+        res.avgRating = (total / res.reviews.length).toFixed(1);
+        // 최신 리뷰가 위로 오도록 정렬
+        res.reviews.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        return res;
+      });
+
+      setRestaurants(processedList);
+      if (processedList.length > 0 && !selectedRes) {
+        setSelectedRes(processedList[0]);
+      }
+    } catch (e) {
+      console.error("데이터 로딩 실패", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRestaurants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 필터링된 식당 목록
+  const filteredList = restaurants.filter(r =>
+    r.name.includes(searchQuery) || r.address.includes(searchQuery)
+  );
+
+  // 2. 카카오 주소 검색 열기
+  const openAddressSearch = () => {
+    new window.daum.Postcode({
+      oncomplete: function(data) {
+        setNewRes(prev => ({ ...prev, address: data.roadAddress || data.jibunAddress }));
+      }
+    }).open();
+  };
+
+  // 3. 리뷰 저장하기 (낙관적 업데이트 적용: 즉시 화면에 보임)
+  const handleReviewSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    const reviewData = {
+      restaurant: selectedRes.name,
+      address: selectedRes.address,
+      category: selectedRes.category,
+      rating: newReview.rating,
+      comment: newReview.comment,
+      author: newReview.author,
+      timestamp: new Date().toISOString()
+    };
+
+    // 화면에 먼저 즉시 반영 (낙관적 업데이트)
+    const updatedRes = { ...selectedRes };
+    updatedRes.reviews = [reviewData, ...updatedRes.reviews];
+    const newTotal = updatedRes.reviews.reduce((sum, r) => sum + r.rating, 0);
+    updatedRes.avgRating = (newTotal / updatedRes.reviews.length).toFixed(1);
+
+    setSelectedRes(updatedRes);
+    setRestaurants(prev => prev.map(r => r.id === updatedRes.id ? updatedRes : r));
+
+    try {
+      // 구글 시트로 백그라운드 전송
       await fetch(SCRIPT_URL, {
         method: 'POST',
-        mode: 'no-cors', // Apps Script POST 시 필수 설정인 경우가 많음
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ...formData, participate }),
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reviewData)
       });
-      // no-cors 모드에서는 응답을 읽을 수 없으므로 성공으로 간주하고 진행
-      setStep(4);
-    } catch (error) {
-      console.error("Error submitting form:", error);
-      alert("데이터 전송 중 오류가 발생했습니다. 네트워크 상태를 확인해주세요.");
+      alert("리뷰가 등록되었습니다!");
+    } catch (e) {
+      alert("네트워크 오류가 발생했지만, 화면에는 임시 저장되었습니다.");
     } finally {
       setIsSubmitting(false);
+      setIsReviewModalOpen(false);
+      setNewReview({ rating: 5, comment: '', author: '' });
     }
   };
 
-  const renderStep = () => {
-    switch (step) {
-      case 0: // 시작 페이지
-        return (
-          <div className="space-y-6 text-center animate-in fade-in duration-500">
-            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Globe className="text-blue-600 w-10 h-10" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">2026 이음청년부 비전트립 수요조사</h1>
-            <p className="text-gray-600 leading-relaxed text-sm">
-              안녕하세요, 이음청년부 동역자 여러분!<br />
-              하나님의 마음을 품고 열방을 향해 나아가는 비전트립 수요조사를 하고있습니다.
-              여러분의 소중한 의견을 통해 더 풍성한 선교의 장을 마련하고자 하오니, 
-              정성껏 답변을 부탁드립니다❤️
-            </p>
-            <div className="space-y-3 pt-4 text-left">
-              <div className="relative">
-                <User className="absolute left-3 top-3 text-gray-400" size={18} />
-                <input 
-                  type="text" 
-                  name="name" 
-                  placeholder="이름" 
-                  value={formData.name}
-                  className="w-full p-3 pl-10 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition"
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="relative">
-                <Phone className="absolute left-3 top-3 text-gray-400" size={18} />
-                <input 
-                  type="text" 
-                  name="phone" 
-                  placeholder="연락처 (010-0000-0000)" 
-                  value={formData.phone}
-                  className="w-full p-3 pl-10 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition"
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-            <button 
-              onClick={nextStep}
-              disabled={!formData.name || !formData.phone}
-              className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition disabled:opacity-50 shadow-lg shadow-blue-200"
-            >
-              설문 시작하기
-            </button>
-          </div>
-        );
+  // 4. 새 식당 등록하기 (첫 리뷰 동시 작성)
+  const handleAddRestaurant = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
 
-      case 1: // 참여 의사
-        return (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <HelpCircle className="text-blue-500" />
-              비전트립이 진행된다면 참여하시겠습니까?
-            </h2>
-            <div className="grid grid-cols-1 gap-4">
-              <button 
-                onClick={() => handleParticipation(true)}
-                className={`p-6 border-2 rounded-2xl flex items-center gap-4 hover:border-blue-500 hover:bg-blue-50 transition ${participate === true ? 'border-blue-500 bg-blue-50' : 'border-gray-100'}`}
-              >
-                <span className="text-3xl">🙌</span>
-                <div className="text-left">
-                  <p className="font-bold text-gray-800">예, 참여하겠습니다</p>
-                  <p className="text-xs text-gray-500">하나님의 마음을 품고 기도로 준비할게요.</p>
-                </div>
-              </button>
-              <button 
-                onClick={() => handleParticipation(false)}
-                className={`p-6 border-2 rounded-2xl flex items-center gap-4 hover:border-gray-500 hover:bg-gray-50 transition ${participate === false ? 'border-gray-500 bg-gray-50' : 'border-gray-100'}`}
-              >
-                <span className="text-3xl">🙏</span>
-                <div className="text-left">
-                  <p className="font-bold text-gray-800">아니오, 어렵습니다</p>
-                  <p className="text-xs text-gray-500">마음으로 함께 기도하며 후원할게요.</p>
-                </div>
-              </button>
-            </div>
-            <button onClick={prevStep} className="w-full py-3 text-gray-500 font-medium">이전 단계로</button>
-          </div>
-        );
+    const initialReview = {
+      restaurant: newRes.name,
+      address: newRes.address,
+      category: newRes.category,
+      rating: newReview.rating,
+      comment: newReview.comment,
+      author: newReview.author,
+      timestamp: new Date().toISOString()
+    };
 
-      case 2: // 분기 섹션 (참여/불참 상세)
-        if (participate) {
-          return (
-            <div className="space-y-6 animate-in slide-in-from-right duration-300 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
-              <div className="space-y-4">
-                <label className="font-bold flex items-center gap-2 text-gray-700"><Globe size={18} className="text-blue-500"/> 희망하는 국가</label>
-                <input 
-                  type="text" 
-                  name="country"
-                  placeholder="예: 캄보디아, 일본, 태국 등"
-                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                  onChange={handleInputChange}
-                />
-              </div>
+    // 화면에 즉시 반영
+    const newRestaurantData = {
+      id: newRes.name,
+      name: newRes.name,
+      address: newRes.address,
+      category: newRes.category,
+      avgRating: newReview.rating.toFixed(1),
+      reviews: [initialReview]
+    };
 
-              <div className="space-y-4">
-                <label className="font-bold flex items-center gap-2 text-gray-700"><Calendar size={18} className="text-blue-500"/> 선호 기간</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['3박 4일', '4박 5일', '5박 6일', '일주일 이상', '상관없음'].map(d => (
-                    <button 
-                      key={d}
-                      onClick={() => setFormData({...formData, duration: d})}
-                      className={`p-3 border rounded-xl text-sm font-medium transition ${formData.duration === d ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-600 border-gray-100'}`}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              </div>
+    setRestaurants([newRestaurantData, ...restaurants]);
+    setSelectedRes(newRestaurantData);
 
-              <div className="space-y-4">
-                <label className="font-bold flex items-center gap-2 text-gray-700"><Star size={18} className="text-blue-500"/> 기여할 수 있는 달란트 (중복)</label>
-                <div className="flex flex-wrap gap-2">
-                  {['찬양/악기', '영상/기록', '디자인/홍보', '어린이사역', '외국어', '행정/회계', '요리'].map(t => (
-                    <button 
-                      key={t}
-                      onClick={() => handleCheckboxChange('talents', t)}
-                      className={`px-4 py-2 border rounded-full text-xs font-semibold transition ${formData.talents.includes(t) ? 'bg-blue-100 border-blue-600 text-blue-700' : 'bg-white text-gray-500 border-gray-100'}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <label className="font-bold flex items-center gap-2 text-gray-700"><Sprout size={18} className="text-green-500"/> 기대하는 영적 열매</label>
-                <div className="flex flex-wrap gap-2">
-                  {['신앙 회복', '선교 사명', '공동체 친밀감', '긍휼의 마음', '비전 발견'].map(f => (
-                    <button 
-                      key={f}
-                      onClick={() => handleCheckboxChange('spiritualFruit', f)}
-                      className={`px-4 py-2 border rounded-full text-xs font-semibold transition ${formData.spiritualFruit.includes(f) ? 'bg-green-100 border-green-600 text-green-700' : 'bg-white text-gray-500 border-gray-100'}`}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <label className="font-bold flex items-center gap-2 text-gray-700"><Users size={18} className="text-blue-500"/> 희망 사역 형태</label>
-                <textarea 
-                  name="ministryType"
-                  placeholder="예: 어린이 사역, 찬양 사역, 노방 전도 등"
-                  className="w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  onChange={handleInputChange}
-                ></textarea>
-              </div>
-
-              <div className="space-y-4">
-                <label className="font-bold text-gray-700 block">사전 훈련(4~8주) 참여 가능 여부</label>
-                <div className="flex gap-2">
-                  {['참여 가능', '조율 필요', '어려움'].map(v => (
-                    <button 
-                      key={v}
-                      onClick={() => setFormData({...formData, training: v})}
-                      className={`flex-1 p-3 border rounded-xl text-xs font-bold transition ${formData.training === v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-100'}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-4 flex gap-3 pb-4">
-                <button onClick={prevStep} className="flex-1 py-4 border-2 rounded-2xl font-bold text-gray-400">이전</button>
-                <button onClick={nextStep} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-100">다음 단계</button>
-              </div>
-            </div>
-          );
-        } else {
-          return (
-            <div className="space-y-6 animate-in slide-in-from-right duration-300">
-              <h2 className="text-xl font-bold text-gray-800 leading-tight">참여를 망설이게 하는<br />가장 큰 요인은 무엇인가요?</h2>
-              <div className="space-y-2">
-                {['경제적 부담 (비용)', '직장/학업 일정 조율', '건강 및 체력', '사전 훈련 기간 부담', '선교에 대한 확신 부족'].map(r => (
-                  <button 
-                    key={r}
-                    onClick={() => setFormData({...formData, reason: r})}
-                    className={`w-full p-4 border-2 rounded-xl text-left text-sm font-medium transition ${formData.reason === r ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-50 text-gray-600 hover:border-gray-200'}`}
-                  >
-                    {r}
-                  </button>
-                ))}
-                <input 
-                  type="text" 
-                  placeholder="기타 사유 직접 입력" 
-                  className="w-full p-4 border-2 border-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  onChange={(e) => setFormData({...formData, reason: e.target.value})}
-                />
-              </div>
-              <div className="pt-4 flex gap-3">
-                <button onClick={prevStep} className="flex-1 py-4 border-2 rounded-2xl font-bold text-gray-400">이전</button>
-                <button onClick={nextStep} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-100">다음 단계</button>
-              </div>
-            </div>
-          );
-        }
-
-      case 3: // 건의사항 및 제출
-        return (
-          <div className="space-y-6 animate-in slide-in-from-right duration-300">
-            <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
-              <MessageSquare className="text-blue-500" />
-              마지막으로 한마디
-            </h2>
-            <p className="text-sm text-gray-500">건의사항이나 선교팀이 함께 기도했으면 하는 기도제목을 적어주세요.</p>
-            <textarea 
-              name="suggestions"
-              placeholder="자유롭게 작성해 주세요..."
-              className="w-full p-4 border rounded-2xl h-48 outline-none focus:ring-2 focus:ring-blue-500 transition"
-              onChange={handleInputChange}
-            ></textarea>
-            <div className="flex gap-3">
-              <button onClick={prevStep} className="flex-1 py-4 border-2 rounded-2xl font-bold text-gray-400" disabled={isSubmitting}>이전</button>
-              <button 
-                onClick={handleSubmit} 
-                className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="animate-spin" size={20} /> 전송 중...
-                  </>
-                ) : (
-                  <>제출하기 <Send size={18} /></>
-                )}
-              </button>
-            </div>
-          </div>
-        );
-
-      case 4: // 완료
-        return (
-          <div className="text-center space-y-6 py-10 animate-in zoom-in duration-500">
-            <div className="flex justify-center">
-              <div className="bg-green-100 p-6 rounded-full">
-                <CheckCircle2 size={60} className="text-green-500" />
-              </div>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-800">응답이 완료되었습니다!</h2>
-            <div className="text-gray-600 space-y-2">
-              <p>귀한 의견을 주신 <span className="text-blue-600 font-bold">{formData.name}</span>님 감사드립니다.</p>
-              <p className="text-sm">보내주신 의견은 비전트립 기획의<br />소중한 자료로 활용하겠습니다.</p>
-            </div>
-            <button 
-              onClick={() => window.location.reload()}
-              className="mt-8 px-8 py-3 bg-gray-100 text-gray-600 rounded-xl font-semibold hover:bg-gray-200 transition"
-            >
-              처음으로 돌아가기
-            </button>
-          </div>
-        );
-
-      default:
-        return null;
+    try {
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify(initialReview)
+      });
+      alert("새로운 맛집이 등록되었습니다!");
+    } finally {
+      setIsSubmitting(false);
+      setIsAddModalOpen(false);
+      setNewRes({ name: '', category: '한식', address: '', tags: '' });
+      setNewReview({ rating: 5, comment: '', author: '' });
     }
   };
+
+  if (loading) return <div className="h-screen flex items-center justify-center text-orange-500 font-bold"><Loader2 className="animate-spin mr-2"/> 맛집 지도를 불러오는 중...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-gray-900">
-      <div className="max-w-md w-full bg-white rounded-[2rem] shadow-2xl shadow-blue-100/50 overflow-hidden relative">
-        {/* 상단 프로그레스 바 */}
-        {step > 0 && step < 4 && (
-          <div className="absolute top-0 left-0 w-full bg-gray-50 h-1.5">
-            <div 
-              className="bg-blue-600 h-full transition-all duration-700 ease-out"
-              style={{ width: `${(step / 3) * 100}%` }}
-            ></div>
+    <div className="h-screen bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden">
+
+      {/* 🔹 상단 헤더 */}
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shrink-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="bg-orange-500 p-2 rounded-xl">
+            <Utensils className="text-white" size={20} />
           </div>
-        )}
-        
-        <div className="p-8 sm:p-10">
-          {renderStep()}
+          <h1 className="text-xl font-black tracking-tight">성실 맛집 <span className="text-orange-500">Map</span></h1>
         </div>
-      </div>
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="bg-slate-900 text-white px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 hover:bg-slate-800 transition"
+        >
+          <Plus size={16} /> 맛집 추가하기
+        </button>
+      </header>
+
+      {/* 🔹 메인 분할 화면 (왼쪽: 지도 / 오른쪽: 목록 및 리뷰) */}
+      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+
+        {/* 🗺️ 왼쪽: 구글 맵 (네이버 지도로 가는 버튼 포함) */}
+        <section className="lg:w-1/2 h-1/2 lg:h-full bg-slate-200 relative border-r border-slate-200">
+          {selectedRes ? (
+            <iframe
+              width="100%"
+              height="100%"
+              style={{ border: 0 }}
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(selectedRes.name + " " + selectedRes.address)}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+              title="Restaurant Map"
+            ></iframe>
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-500">식당을 선택해주세요.</div>
+          )}
+
+          {/* 네이버 지도 길찾기 플로팅 버튼 */}
+          {selectedRes && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
+              <a
+                href={`https://map.naver.com/v5/search/${encodeURIComponent(selectedRes.name + " 수유동")}`}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-green-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-bold hover:bg-green-700 transition hover:scale-105"
+              >
+                <MapIcon size={18} /> 네이버 지도에서 길찾기
+              </a>
+            </div>
+          )}
+        </section>
+
+        {/* 📝 오른쪽: 식당 리스트 및 상세 리뷰 */}
+        <section className="lg:w-1/2 h-1/2 lg:h-full flex flex-col bg-white">
+
+          {/* 검색바 */}
+          <div className="p-4 border-b border-slate-100 shrink-0 bg-slate-50">
+            <div className="relative">
+              <Search className="absolute left-3 top-3.5 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder="맛집 이름이나 주소 검색..."
+                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-400 text-sm"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+            {/* 맛집 목록 리스트 (스크롤) */}
+            <div className="lg:w-2/5 border-r border-slate-100 overflow-y-auto custom-scrollbar p-2 space-y-2">
+              {filteredList.map(res => (
+                <div
+                  key={res.id}
+                  onClick={() => setSelectedRes(res)}
+                  className={`p-4 rounded-xl cursor-pointer border-2 transition ${selectedRes?.id === res.id ? 'bg-orange-50 border-orange-400' : 'bg-white border-transparent hover:bg-slate-50'}`}
+                >
+                  <h3 className="font-bold text-slate-900 truncate">{res.name}</h3>
+                  <div className="flex items-center gap-1 mt-1 text-sm font-bold text-slate-600">
+                    <Star size={14} className="fill-orange-400 text-orange-400" />
+                    {res.avgRating} <span className="text-slate-400 text-xs font-normal">({res.reviews.length})</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2 truncate"><MapPin size={10} className="inline mr-1"/>{res.address}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* 선택된 맛집의 상세 리뷰 피드 */}
+            <div className="lg:w-3/5 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
+              {selectedRes ? (
+                <>
+                  <div className="flex justify-between items-end mb-6">
+                    <div>
+                      <h2 className="text-2xl font-black">{selectedRes.name}</h2>
+                      <p className="text-sm text-slate-500 mt-1">{selectedRes.address}</p>
+                    </div>
+                    <button
+                      onClick={() => setIsReviewModalOpen(true)}
+                      className="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-800"
+                    >
+                      <MessageSquare size={16} /> 리뷰 쓰기
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {selectedRes.reviews.map((r, i) => (
+                      <div key={i} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-bold text-sm text-slate-800">{r.author}</span>
+                          <div className="flex">
+                            {[1,2,3,4,5].map(num => (
+                              <Star key={num} size={12} className={num <= r.rating ? "fill-orange-400 text-orange-400" : "text-slate-200"} />
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">{r.comment}</p>
+                        <p className="text-[10px] text-slate-400 mt-2 text-right">{new Date(r.timestamp).toLocaleDateString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="h-full flex items-center justify-center text-slate-400 text-sm">리스트에서 식당을 선택해주세요.</div>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {/* 🔹 모달: 리뷰 쓰기 */}
+      {isReviewModalOpen && selectedRes && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleReviewSubmit} className="bg-white rounded-3xl w-full max-w-sm p-6 space-y-4 shadow-2xl">
+            <h2 className="text-xl font-black">"{selectedRes.name}" 리뷰</h2>
+            <div className="flex gap-2 justify-center py-2">
+              {[1, 2, 3, 4, 5].map(i => (
+                <Star key={i} size={32} className={`cursor-pointer ${i <= newReview.rating ? 'fill-orange-400 text-orange-400' : 'text-slate-200'}`} onClick={() => setNewReview({...newReview, rating: i})} />
+              ))}
+            </div>
+            <textarea required className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 outline-none focus:border-orange-400 text-sm h-24" placeholder="맛, 분위기, 가성비 등 어떠셨나요?" value={newReview.comment} onChange={e => setNewReview({...newReview, comment: e.target.value})}></textarea>
+            <input required className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 outline-none focus:border-orange-400 text-sm" placeholder="작성자 닉네임" value={newReview.author} onChange={e => setNewReview({...newReview, author: e.target.value})} />
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => setIsReviewModalOpen(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold text-slate-500">취소</button>
+              <button type="submit" disabled={isSubmitting} className="flex-[2] py-3 bg-orange-500 text-white rounded-xl font-bold flex justify-center items-center">
+                {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : "등록하기"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 🔹 모달: 새 식당 등록하기 (Daum 주소검색 적용) */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleAddRestaurant} className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-xl font-black">새 맛집 제보하기</h2>
+              <X className="cursor-pointer text-slate-400" onClick={() => setIsAddModalOpen(false)} />
+            </div>
+
+            <div className="space-y-3">
+              <input required name="name" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:border-orange-400 outline-none text-sm" placeholder="식당 이름" value={newRes.name} onChange={e => setNewRes({...newRes, name: e.target.value})} />
+
+              {/* 카카오 주소 검색 버튼 */}
+              <div className="flex gap-2">
+                <input required readOnly className="flex-1 p-3 bg-slate-100 rounded-xl border border-slate-200 text-sm text-slate-600" placeholder="주소를 검색해주세요" value={newRes.address} />
+                <button type="button" onClick={openAddressSearch} className="px-4 py-3 bg-slate-800 text-white rounded-xl font-bold text-sm whitespace-nowrap">주소 찾기</button>
+              </div>
+
+              <div className="border-t border-slate-100 pt-3 mt-3">
+                <p className="text-sm font-bold text-slate-600 mb-2">첫 리뷰를 남겨주세요!</p>
+                <div className="flex gap-1 mb-2">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <Star key={i} size={24} className={`cursor-pointer ${i <= newReview.rating ? 'fill-orange-400 text-orange-400' : 'text-slate-200'}`} onClick={() => setNewReview({...newReview, rating: i})} />
+                  ))}
+                </div>
+                <input required className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 mb-2 outline-none text-sm" placeholder="한 줄 평" value={newReview.comment} onChange={e => setNewReview({...newReview, comment: e.target.value})} />
+                <input required className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 outline-none text-sm" placeholder="작성자 닉네임" value={newReview.author} onChange={e => setNewReview({...newReview, author: e.target.value})} />
+              </div>
+            </div>
+
+            <button type="submit" disabled={isSubmitting} className="w-full py-4 bg-orange-500 text-white rounded-xl font-bold mt-4 flex justify-center items-center">
+               {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : "지도에 추가하기 🚀"}
+            </button>
+          </form>
+        </div>
+      )}
 
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #e2e8f0;
-          border-radius: 10px;
-        }
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-in {
-          animation: fade-in 0.5s ease-out forwards;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       `}</style>
     </div>
   );
