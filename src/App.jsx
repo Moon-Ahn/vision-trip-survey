@@ -91,12 +91,12 @@ const App = () => {
             <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Globe className="text-blue-600 w-10 h-10" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">2024 청년부 비전트립 수요조사</h1>
+            <h1 className="text-2xl font-bold text-gray-800">2026 청년부 비전트립 수요조사</h1>
             <p className="text-gray-600 leading-relaxed text-sm">
-              안녕하세요, 청년부 동역자 여러분!<br />
-              하나님의 마음을 품고 열방을 향해 나아가는 비전트립을 준비하고 있습니다. 
+              안녕하세요, 이음청년부 동역자 여러분!<br />
+              하나님의 마음을 품고 열방을 향해 나아가는 비전트립 수요조사를 하고있습니다.
               여러분의 소중한 의견을 통해 더 풍성한 선교의 장을 마련하고자 하오니, 
-              정성껏 답변 부탁드립니다.
+              정성껏 답변을 부탁드립니다❤️
             </p>
             <div className="space-y-3 pt-4 text-left">
               <div className="relative">
@@ -213,7 +213,7 @@ const App = () => {
               <div className="space-y-4">
                 <label className="font-bold flex items-center gap-2 text-gray-700"><Sprout size={18} className="text-green-500"/> 기대하는 영적 열매</label>
                 <div className="flex flex-wrap gap-2">
-                  {['신앙 회복', '선교 사명', '공동체 친밀감', '긍휼의 마음', '은사 발견'].map(f => (
+                  {['신앙 회복', '선교 사명', '공동체 친밀감', '긍휼의 마음', '비전 발견'].map(f => (
                     <button 
                       key={f}
                       onClick={() => handleCheckboxChange('spiritualFruit', f)}
@@ -229,7 +229,7 @@ const App = () => {
                 <label className="font-bold flex items-center gap-2 text-gray-700"><Users size={18} className="text-blue-500"/> 희망 사역 형태</label>
                 <textarea 
                   name="ministryType"
-                  placeholder="예: 어린이 VBS, K-Culture 캠프, 노방 전도 등"
+                  placeholder="예: 어린이 사역, 찬양 사역, 노방 전도 등"
                   className="w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   onChange={handleInputChange}
                 ></textarea>
