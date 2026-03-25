@@ -91,7 +91,7 @@ const App = () => {
             <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Globe className="text-blue-600 w-10 h-10" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">2026 청년부 비전트립 수요조사</h1>
+            <h1 className="text-2xl font-bold text-gray-800">2026 이음청년부 비전트립 수요조사</h1>
             <p className="text-gray-600 leading-relaxed text-sm">
               안녕하세요, 이음청년부 동역자 여러분!<br />
               하나님의 마음을 품고 열방을 향해 나아가는 비전트립 수요조사를 하고있습니다.
